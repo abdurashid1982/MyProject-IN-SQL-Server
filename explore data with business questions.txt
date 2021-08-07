@@ -1,0 +1,197 @@
+	--BUSINESS QUESTIONS TO ANSWER
+
+--1. What is the total Revenue for this year?
+--2. What is the total Revenue Performance for YoY?
+--3. What is the MoM Revenue Performance?
+--4. What is the total Revenue Vs Target Performance for the year?
+--5. What is the Revenue VS Target Performance for Per Month
+
+--the list of tables in our youtube database which we use while exploring data with business questions to answer
+select * from dbo.account_lookup
+select * from dbo.Calendar_lookup
+select * from dbo.Marketing_Raw_Data
+select * from dbo.Opportunities_Data
+select * from dbo.Revenue_Raw_Data
+select * from dbo.Targets_Raw_Data
+
+
+     --1. What is the total Revenue for this year?
+
+SELECT Sum(Revenue) AS [Total Revenue]
+FROM   dbo.Revenue_Raw_Data
+WHERE  Month_ID IN (SELECT DISTINCT Month_ID
+                    FROM   DBO.Calendar_lookup
+                    WHERE  Fiscal_Year = 'fy21') 
+
+     
+	 -- With Month_ID in order to analyze in detailed format
+
+SELECT Month_ID,
+       Sum(Revenue) AS [Total Revenue]
+FROM   dbo.Revenue_Raw_Data
+WHERE  Month_ID IN (SELECT DISTINCT Month_ID
+                    FROM   DBO.Calendar_lookup
+                    WHERE  Fiscal_Year = 'fy21')
+GROUP  BY Month_ID 
+
+
+	--2. What is the total Revenue Performance for YoY?
+
+SELECT a.[Total Revenue 21],
+       b.[Total Revenue 20],
+       a.[Total Revenue 21] - b.[Total Revenue 20] AS dol_dif_Yoy
+FROM   (SELECT Sum(Revenue) AS [Total Revenue 21]
+        FROM   dbo.Revenue_Raw_Data
+        WHERE  Month_ID IN (SELECT DISTINCT Month_ID
+                            FROM   DBO.Calendar_lookup
+                            WHERE  Fiscal_Year = 'fy21')) a,
+       (SELECT Sum(Revenue) AS [Total Revenue 20]
+        FROM   dbo.Revenue_Raw_Data
+        WHERE  Month_ID IN (SELECT DISTINCT Month_ID - 12
+                            FROM   dbo.Revenue_Raw_Data
+                            WHERE  Month_ID IN (SELECT Month_ID
+                                                FROM   dbo.Calendar_lookup
+                                                WHERE  Fiscal_Year = 'fy21'))) b 
+
+
+	--3. What is the MoM Revenue Performance?
+
+SELECT a.TM_Revenue,
+       b.LM_Revenue,
+       a.TM_Revenue - b.LM_Revenue AS dif_dol_MoM
+FROM   (SELECT Sum(Revenue) AS TM_Revenue
+        FROM   dbo.Revenue_Raw_Data
+        WHERE  Month_ID IN (SELECT Max(Month_ID)
+                            FROM   dbo.Revenue_Raw_Data)) a,
+       (SELECT Sum(Revenue) AS LM_Revenue
+        FROM   dbo.Revenue_Raw_Data
+        WHERE  Month_ID IN (SELECT Max(Month_ID) - 1
+                            FROM   dbo.Revenue_Raw_Data)) b
+
+-- Here I aggrigated in order to see per month Revenue
+
+SELECT DISTINCT Month_ID,
+                Sum(Revenue) AS TM_Revenue
+FROM   dbo.Revenue_Raw_Data
+WHERE  Month_ID IN (SELECT DISTINCT( Month_ID )
+                    FROM   dbo.Revenue_Raw_Data)
+GROUP  BY Month_ID
+ORDER  BY Month_ID DESC 
+
+
+	--4. What is the total Revenue Vs Target Performance for the year?
+	
+	SELECT a.total_revenue_21,
+           b.total_target_21,
+           a.total_revenue_21 - b.total_target_21 AS Dollar_Dif
+    FROM   (SELECT Sum(Revenue) AS total_revenue_21
+            FROM   dbo.Revenue_Raw_Data
+            WHERE  Month_ID IN (SELECT DISTINCT Month_ID
+                                FROM   dbo.Calendar_lookup
+                                WHERE  Fiscal_Year = 'fy21')) a,
+           (SELECT Round(Sum(Cast(Target AS FLOAT)), 2) AS total_target_21
+            FROM   dbo.Targets_Raw_Data
+            WHERE  Month_ID IN (SELECT DISTINCT Month_ID
+                                FROM   dbo.Revenue_Raw_Data
+                                WHERE  Month_ID IN (SELECT Month_ID
+                                                    FROM   dbo.Calendar_lookup
+                                                    WHERE  Fiscal_Year = 'fy21'))) b 
+    
+	--5. What is the Revenue VS Target Performance for Per Month
+
+SELECT a.Month_ID,
+       a.total_revenue_21,
+       b.total_target_21,
+       a.total_revenue_21 - b.total_target_21 AS Dollar_Dif
+FROM   (SELECT Month_ID,
+               Sum(Revenue) AS total_revenue_21
+        FROM   dbo.Revenue_Raw_Data
+        WHERE  Month_ID IN (SELECT DISTINCT Month_ID
+                            FROM   dbo.Calendar_lookup
+                            WHERE  Fiscal_Year = 'fy21')
+        GROUP  BY Month_ID) a
+       LEFT JOIN (SELECT Month_ID,
+                         Round(Sum(Cast(Target AS FLOAT)), 2) AS total_target_21
+                  FROM   dbo.Targets_Raw_Data
+                  WHERE  Month_ID IN (SELECT DISTINCT Month_ID
+                                      FROM   dbo.Revenue_Raw_Data
+                                      WHERE  Month_ID IN (SELECT Month_ID
+                                                          FROM   dbo.Calendar_lookup
+                                                          WHERE  Fiscal_Year = 'fy21'))
+                  GROUP  BY Month_ID) b
+              ON a.month_ID = b.Month_ID
+       LEFT JOIN (SELECT DISTINCT Month_ID,
+                                  Fiscal_Month
+                  FROM   dbo.Calendar_lookup) c
+              ON a.Month_ID = c.Month_ID 
+
+
+--6. What is the best performing product in terms of Revenue  this year? FY21
+
+SELECT Product_Category,
+       Sum(Revenue) AS Revenue
+FROM   dbo.Revenue_Raw_Data
+WHERE  Month_ID IN (SELECT DISTINCT Month_ID
+                    FROM   dbo.Calendar_lookup
+                    WHERE  Fiscal_Year = 'fy21')
+GROUP  BY Product_Category
+ORDER  BY Revenue DESC 
+
+
+--7. What is the product performance VS Target for the month?
+
+SELECT a.Product_Category,
+       a.Month_ID,
+       a. Revenue,
+       b.Target_12,
+       a.Revenue - b.Target_12 AS doll_dif
+FROM   (SELECT Product_Category,
+               Month_ID,
+               Sum(Revenue) AS Revenue
+        FROM   dbo.Revenue_Raw_Data
+        WHERE  Month_ID IN (SELECT Max(Month_ID)
+                            FROM   dbo.Revenue_Raw_Data)
+        GROUP  BY Product_Category,
+                  Month_ID) a
+       LEFT JOIN (SELECT Product_Category,
+                         Month_ID,
+                         Sum(Cast(Target AS FLOAT)) AS Target_12
+                  FROM   dbo.Targets_Raw_Data
+                  WHERE  Month_ID IN (SELECT Max(Month_ID)
+                                      FROM   dbo.Revenue_Raw_Data)
+                  GROUP  BY Product_Category,
+                            Month_ID) b
+              ON a.Month_ID = b.Month_ID
+                 AND a.Product_Category = b.Product_Category 
+
+
+--7. Which account is performing the best in terms of Revenue?
+
+SELECT a.Account_No,
+       b.[New Account Name],
+       a.Revenue
+FROM   (SELECT Account_No,
+               Sum(Revenue) AS Revenue
+        FROM   dbo.Revenue_Raw_Data
+        GROUP  BY Account_No) a
+       LEFT JOIN (SELECT *
+                  FROM   dbo.account_lookup) b
+              ON a.Account_No = b.[New Account Name] 
+
+
+--8. Which account is performing the best in terms of Revenue?
+
+SELECT DISTINCT a.Account_No,
+                b.[New Account Name],
+                a.Revenue
+FROM   (SELECT Account_No,
+               Sum(Revenue) AS Revenue
+        FROM   dbo.Revenue_Raw_Data
+        WHERE  Month_ID IN (SELECT DISTINCT Month_ID
+                            FROM   dbo.Calendar_lookup
+                            WHERE  Fiscal_Year = 'fy21')
+        GROUP  BY Account_No) a
+       LEFT JOIN (SELECT *
+                  FROM   dbo.account_lookup) b
+              ON a.Account_No = b.[ New_Account_No ]
+ORDER  BY Revenue DESC 
